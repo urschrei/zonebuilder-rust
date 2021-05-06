@@ -102,37 +102,40 @@ pub fn clockboard(
     // Todo: add boundary option
     //boundary: Option<Polygon<f64>>,
 ) -> GeoJson {
-    let polygons: Vec<Polygon<f64>> = if params.num_segments == 1 {
-        params
-            .distances
-            .iter()
-            .map(|distance| {
-                makecircle(
-                    centerpoint,
-                    *distance,
-                    params.num_vertices_arc * params.num_segments,
-                    params.projected,
-                )
-            })
-            .collect()
-    } else {
+    let polygons: Vec<Polygon<f64>> =
         // For each circle radius
         params
             .distances
             .iter()
             .enumerate()
             .flat_map(|(idx, _)| {
-                let irad = params.distances[idx];
-                let irad_inner = if idx == 0 {
-                    0.0
-                } else {
-                    params.distances[(idx - 1)]
-                };
-                let num_segs = if idx == 0 { 1 } else { params.num_segments };
-                (0..num_segs)
-                    .map(|jdx| {
-                        if idx != 0 {
-                            clockpoly(
+                params
+                    .distances
+                    .iter()
+                    .enumerate()
+                    .take(1)
+                    // Draw a circle for the first entry
+                    .map(|_| {
+                        // Only draw the circle on the first distances entry
+                        if idx < 1 {
+                            let irad = params.distances[idx];
+                            Some(makecircle(
+                                centerpoint,
+                                irad,
+                                params.num_vertices_arc * params.num_segments,
+                                params.projected,
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    // Draw clock segments for subsequent entries
+                    .chain((0..params.num_segments).enumerate().map(|(jdx, _)| {
+                        // Skips the call on the first distances entry
+                        if idx > 0 {
+                            let irad = params.distances[idx];
+                            let irad_inner = params.distances[idx - 1];
+                            Some(clockpoly(
                                 centerpoint,
                                 irad,
                                 irad_inner,
@@ -140,24 +143,21 @@ pub fn clockboard(
                                 params.num_segments,
                                 jdx,
                                 params.projected,
-                            )
+                            ))
                         } else {
-                            makecircle(
-                                centerpoint,
-                                irad,
-                                params.num_vertices_arc * params.num_segments,
-                                params.projected,
-                            )
+                            None
                         }
-                    })
-                    .collect::<Vec<Polygon<f64>>>()
+                    }))
+                    .collect::<Vec<Option<Polygon<f64>>>>()
             })
+            // Only retain Some(Polygon) entries, stripping the Option
+            .flatten()
+            // Round the polygon
             .map(|mut poly| {
                 round(&mut poly, params.precision);
                 poly
             })
-            .collect()
-    };
+            .collect();
 
     let gc = geo::GeometryCollection::from_iter(polygons);
     let fc = geojson::FeatureCollection::from(&gc);
